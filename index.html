@@ -655,7 +655,10 @@ function showApp(){
     colConc.style.display='';
     // Todas as colunas visíveis para o gestor
     activeTab='planejada';
-    document.querySelectorAll('.column').forEach(c=>c.classList.add('tab-active'));
+    ['planejada','execucao','aguardando','concluida'].forEach(col=>{
+      const el=document.getElementById('col-wrap-'+col);
+      if(el){ el.classList.add('tab-active'); el.style.display='flex'; }
+    });
   } else {
     activeFilter=currentUser;
     document.getElementById('filter-bar').style.display='none';
@@ -668,12 +671,15 @@ function showApp(){
     // Técnico: ocultar aba e coluna "Concluída"
     tabConc.style.display='none';
     colConc.style.display='none';
-    // Sempre inicia na aba "Planejada"
+    // Sempre inicia na aba "Planejada" — forçar via style inline
     activeTab='planejada';
-    // Remove tab-active de todas as colunas primeiro
-    document.querySelectorAll('.column').forEach(c=>c.classList.remove('tab-active'));
-    // Ativa só a coluna planejada
-    document.getElementById('col-wrap-planejada').classList.add('tab-active');
+    ['planejada','execucao','aguardando'].forEach(col=>{
+      const el=document.getElementById('col-wrap-'+col);
+      if(el){
+        el.classList.remove('tab-active');
+        el.style.display = col==='planejada' ? 'flex' : 'none';
+      }
+    });
     document.getElementById('board').style.display='grid';
     document.getElementById('tech-welcome').classList.remove('visible');
   }
@@ -760,19 +766,21 @@ function switchTab(s){
   activeTab=s;
   document.getElementById('tech-welcome').classList.remove('visible');
   document.getElementById('board').style.display='grid';
-  // Remove todas as colunas ativas
-  document.querySelectorAll('.column').forEach(c=>c.classList.remove('tab-active'));
   const isMobile=window.innerWidth<=767;
-  if(isMobile && isTecnico()){
-    // Mobile técnico: só mostra a coluna clicada
-    document.getElementById('col-wrap-'+s).classList.add('tab-active');
-  } else {
-    // Desktop ou gestor: todas as colunas visíveis (exceto concluída se técnico)
-    ['planejada','execucao','aguardando','concluida'].forEach(col=>{
-      const el=document.getElementById('col-wrap-'+col);
-      if(el) el.classList.add('tab-active');
-    });
-  }
+  // Esconde todas as colunas primeiro
+  ['planejada','execucao','aguardando','concluida'].forEach(col=>{
+    const el=document.getElementById('col-wrap-'+col);
+    if(!el) return;
+    if(isMobile && isTecnico()){
+      // Mobile técnico: força display none/flex via style inline
+      el.classList.remove('tab-active');
+      el.style.display = col===s ? 'flex' : 'none';
+    } else {
+      // Desktop ou gestor: todas visíveis
+      el.classList.add('tab-active');
+      el.style.display = 'flex';
+    }
+  });
   updateTabStyle();
 }
 
