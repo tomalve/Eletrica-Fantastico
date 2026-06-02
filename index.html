@@ -267,6 +267,21 @@ select option{background:var(--card)}
 .ios-step{font-size:12px;color:var(--text);display:flex;align-items:center;gap:8px}
 .ios-step-num{width:20px;height:20px;border-radius:50%;background:var(--cyan);color:#000;font-family:var(--font-head);font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .btn-ios-close{margin-top:12px;width:100%;padding:10px;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-family:var(--font-head);font-size:13px;font-weight:700;text-transform:uppercase;cursor:pointer}
+/* ── NOTIFICATION BANNER ── */
+#notif-banner{position:fixed;top:68px;left:50%;transform:translateX(-50%) translateY(-200%);
+  z-index:3000;background:var(--surface);border:1px solid var(--yellow);border-left:4px solid var(--yellow);
+  border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:12px;
+  box-shadow:0 8px 32px rgba(0,0,0,.6);transition:transform .4s cubic-bezier(.175,.885,.32,1.275);
+  max-width:92vw;min-width:260px}
+#notif-banner.show{transform:translateX(-50%) translateY(0)}
+.notif-icon{width:36px;height:36px;background:rgba(245,197,24,.15);border-radius:8px;
+  display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.notif-body{flex:1;min-width:0}
+.notif-title{font-family:var(--font-head);font-size:13px;font-weight:800;color:var(--yellow);
+  letter-spacing:.5px;margin-bottom:2px}
+.notif-text{font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.notif-close{background:transparent;border:none;color:var(--muted);font-size:20px;cursor:pointer;
+  flex-shrink:0;padding:2px 4px;line-height:1}
 </style>
 </head>
 <body>
@@ -452,6 +467,16 @@ select option{background:var(--card)}
 
 <div class="toast" id="toast"></div>
 
+<!-- NOTIFICATION BANNER (in-app) -->
+<div id="notif-banner">
+  <div class="notif-icon">⚡</div>
+  <div class="notif-body">
+    <div class="notif-title">Nova OS atribuída a você!</div>
+    <div class="notif-text" id="notif-text">—</div>
+  </div>
+  <button class="notif-close" onclick="hideNotifBanner()">×</button>
+</div>
+
 <!-- INSTALL BANNERS -->
 <div id="install-banner">
   <div class="install-icon"><div class="install-bolt-sm"></div></div>
@@ -538,11 +563,69 @@ async function fbDelete(id){
   catch(e){ setSyncDot('error'); showToast('Erro ao excluir','error'); console.error(e); }
 }
 
+// ── NOTIFICATIONS ──
+let notifTimer=null;
+function hideNotifBanner(){
+  document.getElementById('notif-banner').classList.remove('show');
+  if(notifTimer){clearTimeout(notifTimer);notifTimer=null;}
+}
+function showNotifBanner(os){
+  document.getElementById('notif-text').textContent=os.osNumber+' — '+os.title;
+  document.getElementById('notif-banner').classList.add('show');
+  if(notifTimer) clearTimeout(notifTimer);
+  notifTimer=setTimeout(hideNotifBanner, 7000);
+}
+
+async function requestNotifPermission(){
+  if(!('Notification' in window)) return;
+  if(Notification.permission==='default'){
+    await Notification.requestPermission();
+  }
+}
+
+function sendPushNotif(os){
+  if(!('Notification' in window)||Notification.permission!=='granted') return;
+  const n=new Notification('⚡ Nova OS atribuída a você!',{
+    body: os.osNumber+' — '+os.title,
+    icon: 'ícone-192.png',
+    badge: 'ícone-192.png',
+    tag: os.id,
+    renotify: true,
+  });
+  n.onclick=()=>{ window.focus(); n.close(); };
+}
+
+function handleNewOS(os){
+  // Só notifica o técnico atribuído (quando logado)
+  if(!currentUser || currentRole==='gestor') return;
+  if(os.tech !== currentUser) return;
+  showNotifBanner(os);
+  sendPushNotif(os);
+}
+
 function subscribeFirestore(){
   if(unsubscribe) unsubscribe();
+  let firstLoad=true;
+  const knownIds=new Set();
   unsubscribe=onSnapshot(col(),(snap)=>{
-    osData=snap.docs.map(d=>({id:d.id,...d.data()}));
-    osData.sort((a,b)=>(a.createdAt||'').localeCompare(b.createdAt||''));
+    const newItems=snap.docs.map(d=>({id:d.id,...d.data()}));
+    newItems.sort((a,b)=>(a.createdAt||'').localeCompare(b.createdAt||''));
+
+    if(firstLoad){
+      // Primeira carga: apenas registra os IDs existentes, sem notificar
+      newItems.forEach(o=>knownIds.add(o.id));
+      firstLoad=false;
+    } else {
+      // Detecta OS genuinamente novas
+      newItems.forEach(o=>{
+        if(!knownIds.has(o.id)){
+          knownIds.add(o.id);
+          handleNewOS(o);
+        }
+      });
+    }
+
+    osData=newItems;
     setSyncDot('ok');
     if(currentUser) renderAll();
   },(err)=>{ setSyncDot('error'); showToast('Erro de sincronização','error'); });
@@ -626,6 +709,8 @@ function doLogin(){
   if(!selectedLogin)return;
   currentUser=selectedLogin.name; currentRole=selectedLogin.role;
   document.getElementById('login-screen').style.display='none';
+  // Pedir permissão de notificação ao entrar (só técnicos)
+  if(selectedLogin.role!=='gestor') requestNotifPermission();
   subscribeFirestore();
   showApp();
 }
@@ -921,7 +1006,7 @@ document.getElementById('overlay-move').addEventListener('click',e=>{if(e.target
 document.getElementById('overlay-senha').addEventListener('click',e=>{if(e.target===e.currentTarget)fecharSenhaModal()});
 
 // ── EXPOSE FUNCS (onclick attrs) ──
-Object.assign(window,{selectUser,doLogin,doLogout,abrirSenhaModal,fecharSenhaModal,toggleSenhaVis,limparErroSenha,confirmarSenha,setFilter,openModal,closeModal,saveOS,editOS,deleteOS,openMoveModal,closeMoveModal,moveOS,switchTab,toggleTerceirosFields});
+Object.assign(window,{selectUser,doLogin,doLogout,abrirSenhaModal,fecharSenhaModal,toggleSenhaVis,limparErroSenha,confirmarSenha,setFilter,openModal,closeModal,saveOS,editOS,deleteOS,openMoveModal,closeMoveModal,moveOS,switchTab,toggleTerceirosFields,hideNotifBanner});
 
 // ── DESREGISTRAR Service Worker antigo (libera Firebase em tempo real) ──
 if('serviceWorker' in navigator){
