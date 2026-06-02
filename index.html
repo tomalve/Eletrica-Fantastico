@@ -884,10 +884,6 @@ async function saveOS(){
     inicio:  isTer ? document.getElementById('f-inicio').value : '',
     termino: isTer ? document.getElementById('f-termino').value : '',
   };
-    progress: parseInt(document.getElementById('f-progress').value)||0,
-    completedAt: status==='concluida'?(prev.completedAt||now):'',
-    createdAt: prev.createdAt||new Date().toISOString(),
-  };
   closeModal();
   await fbSave(os);
   if(status!==activeTab)switchTab(status);
