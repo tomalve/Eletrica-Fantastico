@@ -387,6 +387,19 @@ select option{background:var(--card)}
       <div class="field"><label>Técnico</label><select id="f-tech"><option value="">— Selecionar —</option></select></div>
       <div class="field"><label>Prazo</label><input type="date" id="f-deadline"></div>
     </div>
+    <!-- Campos extras para Terceiros -->
+    <div id="terceiros-fields" style="display:none">
+      <div class="form-grid full" style="margin-top:10px">
+        <div class="field"><label>Empresa Executante</label><input type="text" id="f-empresa" placeholder="Ex: Eletrotech Serviços Ltda"></div>
+      </div>
+      <div class="form-grid full" style="margin-top:10px">
+        <div class="field"><label>Projeto</label><input type="text" id="f-projeto" placeholder="Ex: Ampliação Subestação Norte"></div>
+      </div>
+      <div class="form-grid" style="margin-top:10px">
+        <div class="field"><label>Data de Início</label><input type="date" id="f-inicio"></div>
+        <div class="field"><label>Data de Término</label><input type="date" id="f-termino"></div>
+      </div>
+    </div>
     <div class="form-grid" style="margin-top:10px">
       <div class="field"><label>Status</label>
         <select id="f-status"><option value="planejada">Planejada</option><option value="execucao">Em Execução</option><option value="aguardando">Aguardando Material</option><option value="concluida">Concluída</option></select></div>
@@ -694,7 +707,8 @@ function showApp(){
 function buildFilterBar(){
   document.getElementById('filter-bar').innerHTML=`<span class="filter-label">Filtrar:</span>
     <button class="filter-chip gestor-active" data-filter="todos" onclick="setFilter('todos')">Todos</button>
-    ${TECNICOS.map(t=>`<button class="filter-chip" data-filter="${t.name}" onclick="setFilter('${t.name}')">${t.name.split(' ')[0]}</button>`).join('')}`;
+    ${TECNICOS.map(t=>`<button class="filter-chip" data-filter="${t.name}" onclick="setFilter('${t.name}')">${t.name.split(' ')[0]}</button>`).join('')}
+    <button class="filter-chip" data-filter="terceiros" onclick="setFilter('terceiros')" style="border-color:var(--orange);color:var(--orange)">🔧 Terceiros</button>`;
 }
 function setFilter(f){
   activeFilter=f;
@@ -702,7 +716,12 @@ function setFilter(f){
   renderAll();
 }
 function populateTechSelect(){
-  document.getElementById('f-tech').innerHTML=`<option value="">— Selecionar —</option>`+TECNICOS.map(t=>`<option value="${t.name}">${t.name}</option>`).join('');
+  document.getElementById('f-tech').innerHTML=
+    `<option value="">— Selecionar —</option>`+
+    TECNICOS.map(t=>`<option value="${t.name}">${t.name}</option>`).join('')+
+    `<option value="Terceiros">🔧 Terceiros</option>`;
+  // Mostrar/ocultar campos extras de terceiros conforme seleção
+  document.getElementById('f-tech').addEventListener('change', toggleTerceirosFields);
 }
 
 // ── RENDER ──
@@ -710,6 +729,13 @@ function cardHTML(o){
   const prog=parseInt(o.progress)||0;
   const dlt=dlText(o.deadline,o.status); const dlc=dlClass(o.deadline);
   const done=o.status==='concluida'; const hide=canEdit()?'':'hidden-tech';
+  const isTer=o.tech==='Terceiros';
+  const terInfo = isTer ? `
+    ${o.empresa?`<span class="tag" style="color:var(--orange);border-color:var(--orange)">🏢 ${esc(o.empresa)}</span>`:''}
+    ${o.projeto?`<span class="tag" style="color:var(--cyan);border-color:var(--cyan)">📋 ${esc(o.projeto)}</span>`:''}
+    ${o.inicio?`<span class="tag">▶ ${new Date(o.inicio+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit'})}</span>`:''}
+    ${o.termino?`<span class="tag">⏹ ${new Date(o.termino+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit'})}</span>`:''}
+  ` : '';
   return`<div class="card ${o.priority}">
     <div class="card-top"><div class="card-id">${esc(o.osNumber||o.id)}</div>
       <div class="priority-badge ${o.priority}">${o.priority==='alta'?'Alta':o.priority==='media'?'Média':'Baixa'}</div></div>
@@ -718,11 +744,12 @@ function cardHTML(o){
       ${o.type?`<span class="tag">${esc(o.type)}</span>`:''}
       ${o.area?`<span class="tag">${esc(o.area)}</span>`:''}
       ${done?'<span class="tag" style="color:var(--green);border-color:var(--green)">✔ OK</span>':''}
+      ${terInfo}
     </div>
     ${o.status==='execucao'?`<div class="progress-wrap"><div class="progress-bar"><div class="progress-fill" style="width:${prog}%;background:${prog>=80?'var(--green)':prog>=40?'var(--yellow)':'var(--orange)'}"></div></div><div class="progress-label">${prog}%</div></div>`:''}
     <div class="card-footer">
-      <div class="tech-avatar" style="background:${techBg(o.tech)};color:${techTx(o.tech)}">${initials(o.tech)}</div>
-      <div class="tech-name">${esc(o.tech||'Não atribuído')}</div>
+      <div class="tech-avatar" style="background:${isTer?'rgba(232,114,12,.2)':techBg(o.tech)};color:${isTer?'var(--orange)':techTx(o.tech)}">${isTer?'3°':initials(o.tech)}</div>
+      <div class="tech-name">${isTer?'Terceiros':esc(o.tech||'Não atribuído')}</div>
       ${done&&o.completedAt?`<div class="deadline" style="color:var(--green)">✓ ${o.completedAt}</div>`:''}
       ${dlt?`<div class="deadline ${dlc}">${dlt}</div>`:''}
     </div>
@@ -737,7 +764,15 @@ function isTecnico(){return currentRole!=='gestor'}
 
 // Técnico não vê OS concluídas
 function filteredOS(){
-  let items = activeFilter==='todos' ? osData : osData.filter(o=>o.tech===activeFilter);
+  let items = osData;
+  if(activeFilter==='todos') {
+    // gestor vê tudo exceto terceiros (terceiros só aparecem no filtro deles)
+    if(!isTecnico()) items = osData.filter(o=>o.tech!=='Terceiros');
+  } else if(activeFilter==='terceiros'){
+    items = osData.filter(o=>o.tech==='Terceiros');
+  } else {
+    items = osData.filter(o=>o.tech===activeFilter);
+  }
   if(isTecnico()) items = items.filter(o=>o.status!=='concluida');
   return items;
 }
@@ -788,6 +823,11 @@ function updateTabStyle(){
   document.querySelectorAll('.tab-btn').forEach(b=>{b.className='tab-btn';if(b.dataset.col===activeTab)b.classList.add('active-'+activeTab);});
 }
 
+function toggleTerceirosFields(){
+  const isTer = document.getElementById('f-tech').value === 'Terceiros';
+  document.getElementById('terceiros-fields').style.display = isTer ? 'block' : 'none';
+}
+
 // ── MODAL OS ──
 function autoOsNumber(){
   const y=new Date().getFullYear();
@@ -807,6 +847,12 @@ function openModal(data){
   document.getElementById('f-deadline').value=data?(data.deadline||''):'';
   document.getElementById('f-status').value=data?data.status:activeTab;
   document.getElementById('f-progress').value=data?(data.progress||0):0;
+  // Campos terceiros
+  document.getElementById('f-empresa').value=data?(data.empresa||''):'';
+  document.getElementById('f-projeto').value=data?(data.projeto||''):'';
+  document.getElementById('f-inicio').value=data?(data.inicio||''):'';
+  document.getElementById('f-termino').value=data?(data.termino||''):'';
+  toggleTerceirosFields();
   document.getElementById('overlay-new').classList.add('open');
 }
 function closeModal(){document.getElementById('overlay-new').classList.remove('open')}
@@ -818,6 +864,7 @@ async function saveOS(){
   const status=document.getElementById('f-status').value;
   const now=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
   const prev=editId?osData.find(o=>o.id===editId)||{}:{};
+  const isTer = document.getElementById('f-tech').value === 'Terceiros';
   const os={
     id: editId||'os_'+Date.now(),
     osNumber: document.getElementById('f-id').value.trim()||prev.osNumber||autoOsNumber(),
@@ -828,6 +875,15 @@ async function saveOS(){
     tech: document.getElementById('f-tech').value,
     deadline: document.getElementById('f-deadline').value,
     status,
+    progress: parseInt(document.getElementById('f-progress').value)||0,
+    completedAt: status==='concluida'?(prev.completedAt||now):'',
+    createdAt: prev.createdAt||new Date().toISOString(),
+    // Campos terceiros
+    empresa: isTer ? document.getElementById('f-empresa').value.trim() : '',
+    projeto: isTer ? document.getElementById('f-projeto').value.trim() : '',
+    inicio:  isTer ? document.getElementById('f-inicio').value : '',
+    termino: isTer ? document.getElementById('f-termino').value : '',
+  };
     progress: parseInt(document.getElementById('f-progress').value)||0,
     completedAt: status==='concluida'?(prev.completedAt||now):'',
     createdAt: prev.createdAt||new Date().toISOString(),
@@ -869,7 +925,7 @@ document.getElementById('overlay-move').addEventListener('click',e=>{if(e.target
 document.getElementById('overlay-senha').addEventListener('click',e=>{if(e.target===e.currentTarget)fecharSenhaModal()});
 
 // ── EXPOSE FUNCS (onclick attrs) ──
-Object.assign(window,{selectUser,doLogin,doLogout,abrirSenhaModal,fecharSenhaModal,toggleSenhaVis,limparErroSenha,confirmarSenha,setFilter,openModal,closeModal,saveOS,editOS,deleteOS,openMoveModal,closeMoveModal,moveOS,switchTab});
+Object.assign(window,{selectUser,doLogin,doLogout,abrirSenhaModal,fecharSenhaModal,toggleSenhaVis,limparErroSenha,confirmarSenha,setFilter,openModal,closeModal,saveOS,editOS,deleteOS,openMoveModal,closeMoveModal,moveOS,switchTab,toggleTerceirosFields});
 
 // ── DESREGISTRAR Service Worker antigo (libera Firebase em tempo real) ──
 if('serviceWorker' in navigator){
